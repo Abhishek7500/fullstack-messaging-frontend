@@ -1,5 +1,5 @@
 export const environment = {
   production: true,
-  apiUrl: 'http://localhost:8080/api',
-  wsUrl: 'http://localhost:8080/ws'
+  apiUrl: 'https://fullstack-messaging-backend.onrender.com',
+  wsUrl: 'https://fullstack-messaging-backend.onrender.com'
 };
