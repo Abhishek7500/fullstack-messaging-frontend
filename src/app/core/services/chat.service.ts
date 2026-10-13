@@ -161,6 +161,11 @@ export class ChatService {
     return this.conversationsSubject.value.find((item) => item.id === id) ?? null;
   }
 
+  /** Synchronous snapshot of the active thread's messages (for non-reactive reads). */
+  currentMessages(): ChatMessage[] {
+    return this.messagesSubject.value;
+  }
+
   private onIncomingMessage(message: ChatMessage): void {
     const activeId = this.activeIdSubject.value;
     if (activeId === message.conversationId) {

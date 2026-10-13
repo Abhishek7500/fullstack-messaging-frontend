@@ -25,7 +25,7 @@ import { PremiumUpgradeModalComponent } from '../../shared/premium-upgrade-modal
     <section class="flex h-full min-w-0 flex-1 flex-col bg-[#f7f9fc]">
       @if (vm$ | async; as vm) {
         @if (vm.conversation) {
-          <header class="flex items-center justify-between border-b border-gray-200 bg-white px-5 py-3">
+          <header class="flex items-center justify-between border-b border-gray-200/80 bg-white/90 px-5 py-3 shadow-sm backdrop-blur">
             <div class="flex items-center gap-3">
               <app-avatar
                 [name]="title(vm.conversation)"
@@ -34,26 +34,32 @@ import { PremiumUpgradeModalComponent } from '../../shared/premium-upgrade-modal
                 [showStatus]="true"
               />
               <div>
-                <h2 class="text-base font-semibold">{{ title(vm.conversation) }}</h2>
-                <p class="text-xs text-messenger-muted">
-                  {{ isOnline(vm.conversation) ? 'Active now' : 'Offline' }}
+                <h2 class="text-base font-semibold text-messenger-ink">{{ title(vm.conversation) }}</h2>
+                <p class="flex items-center gap-1 text-xs text-messenger-muted">
+                  @if (isOnline(vm.conversation)) {
+                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Active now
+                  } @else {
+                    <span class="h-1.5 w-1.5 rounded-full bg-gray-300"></span> Offline
+                  }
                 </p>
               </div>
             </div>
             @if (subscription(); as sub) {
               <span
-                class="rounded-full px-3 py-1 text-xs font-semibold"
-                [class.bg-amber-100]="!sub.premium"
-                [class.text-amber-700]="!sub.premium"
-                [class.bg-emerald-100]="sub.premium"
-                [class.text-emerald-700]="sub.premium"
+                class="rounded-full px-3 py-1 text-xs font-semibold shadow-sm transition-all duration-300"
+                [class.bg-gradient-to-r]="true"
+                [class.from-amber-400]="!sub.premium"
+                [class.to-orange-500]="!sub.premium"
+                [class.text-white]="!sub.premium"
+                [class.from-emerald-400]="sub.premium"
+                [class.to-teal-500]="sub.premium"
               >
                 {{ sub.premium ? '⭐ Paid Family' : 'Free' }}
               </span>
             }
           </header>
 
-          <div #scroller class="flex-1 space-y-3 overflow-y-auto px-5 py-6">
+          <div #scroller class="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-[#f7f9fc] to-blue-50/40 px-5 py-6">
             @for (message of vm.messages; track message.id) {
               <app-chat-bubble
                 [message]="message"
@@ -64,13 +70,19 @@ import { PremiumUpgradeModalComponent } from '../../shared/premium-upgrade-modal
               />
             }
             @if (vm.typists.length) {
-              <div class="flex items-center gap-2 text-sm text-messenger-muted">
-                <span class="flex gap-1 rounded-full bg-white px-3 py-2">
-                  <span class="typing-dot h-1.5 w-1.5 rounded-full bg-gray-500"></span>
-                  <span class="typing-dot h-1.5 w-1.5 rounded-full bg-gray-500"></span>
-                  <span class="typing-dot h-1.5 w-1.5 rounded-full bg-gray-500"></span>
-                </span>
-                {{ vm.typists[0].displayName }} is typing…
+              <div class="flex items-end gap-2 text-sm text-messenger-muted">
+                <div class="relative">
+                  <div class="memeoi-bounce flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-messenger-blue to-indigo-500 text-lg shadow-sm">
+                    {{ typistEmoji(vm.typists[0].displayName) }}
+                  </div>
+                  <span class="pulse-ring absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-messenger-blue"></span>
+                </div>
+                <div class="bubble-pop mb-1 flex items-center gap-1.5 rounded-2xl rounded-bl-md bg-white px-3 py-2 shadow-sm">
+                  <span class="typing-dot h-2 w-2 rounded-full bg-messenger-blue"></span>
+                  <span class="typing-dot h-2 w-2 rounded-full bg-messenger-blue"></span>
+                  <span class="typing-dot h-2 w-2 rounded-full bg-messenger-blue"></span>
+                </div>
+                <span class="mb-2 text-[11px]">{{ vm.typists[0].displayName }} is typing…</span>
               </div>
             }
           </div>
@@ -282,6 +294,16 @@ export class ChatWindowComponent implements AfterViewChecked {
 
   isOnline(conversation: Conversation): boolean {
     return conversation.participants.some((p) => p.id !== this.me?.id && p.online);
+  }
+
+  /** Deterministic Memoji for a typist, derived from their name. */
+  typistEmoji(name: string): string {
+    const memojis = ['🙂', '😎', '🤠', '🧑‍🚀', '🦸', '🧙', '🦊', '🐼', '🐨', '🦁'];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = (hash + name.charCodeAt(i)) % memojis.length;
+    }
+    return memojis[hash];
   }
 
   private scrollToBottom(): void {

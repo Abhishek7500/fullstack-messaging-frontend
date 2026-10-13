@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { ChatMessage, ReactionSummary } from '../core/models';
 import { ReactionBarComponent } from '../shared/reaction-bar.component';
 import { CountdownTimerComponent } from '../shared/countdown-timer.component';
+import { resolveMediaUrl } from './media-url';
 
 /**
  * A single chat bubble. Renders one of four payloads:
@@ -65,9 +66,9 @@ import { CountdownTimerComponent } from '../shared/countdown-timer.component';
             }
             @case ('PHOTO') {
               <img
-                [src]="message().mediaUrl!"
+                [src]="mediaSrc()"
                 alt="Shared photo"
-                class="max-h-72 w-full rounded-xl object-cover"
+                class="max-h-72 w-full rounded-xl object-cover transition-all duration-300"
                 loading="lazy"
               />
               @if (message().content) {
@@ -76,7 +77,7 @@ import { CountdownTimerComponent } from '../shared/countdown-timer.component';
             }
             @case ('VIDEO') {
               <video
-                [src]="message().mediaUrl!"
+                [src]="mediaSrc()"
                 controls
                 class="max-h-72 w-full rounded-xl bg-black"
               ></video>
@@ -125,6 +126,13 @@ export class ChatBubbleComponent {
     const type = this.message().messageType;
     return type === 'PHOTO' || type === 'VIDEO';
   });
+
+  /**
+   * Absolute URL for the media asset. The backend stores relative keys like
+   * {@code /api/media/{id}}; when the SPA is served from a different origin we
+   * must prefix the backend host or the <img>/<video> request 404s.
+   */
+  readonly mediaSrc = computed(() => resolveMediaUrl(this.message().mediaUrl));
 
   constructor() {
     // Re-sync local tallies from the authoritative server payload whenever it

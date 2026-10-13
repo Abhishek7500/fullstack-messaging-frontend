@@ -1,5 +1,9 @@
 export const environment = {
   production: false,
   apiUrl: 'http://localhost:8080/api',
-  wsUrl: 'http://localhost:8080/ws'
+  wsUrl: 'http://localhost:8080/ws',
+  // Origin used to resolve relative asset URLs (e.g. /api/media/{id}) so images
+  // and videos load correctly when the frontend is served from a different host.
+  mediaBaseUrl: 'http://localhost:8080'
 };
+

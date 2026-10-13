@@ -1,4 +1,4 @@
-import { Component, input, output, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, input, output, signal } from '@angular/core';
 import { NgClass } from '@angular/common';
 import { ReactionSummary } from '../core/models';
 
@@ -9,6 +9,9 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
  * hover quick-picker. Taps are applied optimistically via Signals so the count
  * updates instantly, then the authoritative tally arrives from the server
  * broadcast and overwrites the local state.
+ * <p>
+ * The quick-picker dismisses itself on any outside click via a document-level
+ * {@link HostListener} that checks DOM containment against this component.
  */
 @Component({
   selector: 'app-reaction-bar',
@@ -19,7 +22,7 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
       @for (summary of reactions(); track summary.reactionType) {
         <button
           type="button"
-          class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs shadow-sm transition"
+          class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs shadow-sm transition-all duration-300"
           [ngClass]="summary.reactedByMe
             ? 'border-messenger-blue bg-blue-50 text-messenger-blue'
             : 'border-gray-200 bg-white text-messenger-muted hover:bg-gray-50'"
@@ -34,22 +37,22 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
       <div class="relative">
         <button
           type="button"
-          class="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-messenger-muted shadow-sm transition hover:bg-gray-50"
-          (click)="pickerOpen.set(!pickerOpen())"
+          class="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white/80 text-messenger-muted shadow-sm backdrop-blur transition-all duration-300 hover:scale-110 hover:bg-gray-50"
+          (click)="togglePicker()"
           aria-label="Add reaction"
         >
           😊
         </button>
         @if (pickerOpen()) {
           <div
-            class="absolute bottom-8 z-10 flex gap-1 rounded-full border border-gray-200 bg-white p-1 shadow-pane"
+            class="bubble-pop absolute bottom-9 z-20 flex gap-1 rounded-full border border-white/60 bg-white/80 p-1.5 shadow-pane backdrop-blur-md"
             [class.right-0]="align() === 'right'"
             [class.left-0]="align() === 'left'"
           >
             @for (emoji of quick; track emoji) {
               <button
                 type="button"
-                class="rounded-full px-1.5 py-0.5 text-base transition hover:scale-125 hover:bg-gray-100"
+                class="rounded-full px-1.5 py-0.5 text-lg transition-all duration-200 hover:scale-125 hover:bg-gray-100"
                 (click)="toggle(emoji)"
               >
                 {{ emoji }}
@@ -72,8 +75,33 @@ export class ReactionBarComponent {
   readonly quick = QUICK_REACTIONS;
   readonly pickerOpen = signal(false);
 
+  constructor(private readonly host: ElementRef<HTMLElement>) {}
+
+  /** Open/close the picker from its trigger button. */
+  togglePicker(): void {
+    this.pickerOpen.update((open) => !open);
+  }
+
+  /**
+   * Dismiss the picker on any outside click. Because the trigger and the emoji
+   * buttons live inside this component's host element, clicks on them are
+   * ignored here (they manage their own state) and only true outside clicks
+   * close the menu.
+   */
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (!this.pickerOpen()) {
+      return;
+    }
+    const target = event.target as Node | null;
+    if (target && !this.host.nativeElement.contains(target)) {
+      this.pickerOpen.set(false);
+    }
+  }
+
   toggle(reactionType: string): void {
     this.pickerOpen.set(false);
     this.toggled.emit(reactionType);
   }
 }
+
