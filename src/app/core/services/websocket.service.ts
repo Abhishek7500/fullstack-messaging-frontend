@@ -4,7 +4,7 @@ import SockJS from 'sockjs-client';
 import { Observable, Subject } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AuthService } from './auth.service';
-import { ChatMessage, PresenceEvent, TypingEvent } from '../models';
+import { ChatMessage, PresenceEvent, ReactionEvent, SendMessagePayload, TypingEvent } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class WebsocketService {
@@ -14,10 +14,12 @@ export class WebsocketService {
   private readonly messagesSubject = new Subject<ChatMessage>();
   private readonly typingSubject = new Subject<TypingEvent>();
   private readonly presenceSubject = new Subject<PresenceEvent>();
+  private readonly reactionsSubject = new Subject<ReactionEvent>();
 
   readonly messages$ = this.messagesSubject.asObservable();
   readonly typing$ = this.typingSubject.asObservable();
   readonly presence$ = this.presenceSubject.asObservable();
+  readonly reactions$ = this.reactionsSubject.asObservable();
 
   constructor(private readonly auth: AuthService) {}
 
@@ -72,6 +74,7 @@ export class WebsocketService {
         }
         const messageDest = `/topic/conversations/${conversationId}`;
         const typingDest = `/topic/conversations/${conversationId}/typing`;
+        const reactionDest = `/topic/conversations/${conversationId}/reactions`;
         if (!this.roomSubscriptions.has(messageDest)) {
           this.roomSubscriptions.set(
             messageDest,
@@ -88,6 +91,14 @@ export class WebsocketService {
             })
           );
         }
+        if (!this.roomSubscriptions.has(reactionDest)) {
+          this.roomSubscriptions.set(
+            reactionDest,
+            this.client.subscribe(reactionDest, (message: IMessage) => {
+              this.reactionsSubject.next(JSON.parse(message.body) as ReactionEvent);
+            })
+          );
+        }
         subscriber.next();
       };
       trySubscribe();
@@ -95,10 +106,10 @@ export class WebsocketService {
     });
   }
 
-  sendMessage(conversationId: number, content: string): void {
+  sendMessage(payload: SendMessagePayload): void {
     this.client?.publish({
       destination: '/app/chat.send',
-      body: JSON.stringify({ conversationId, content })
+      body: JSON.stringify(payload)
     });
   }
 
@@ -109,7 +120,15 @@ export class WebsocketService {
     });
   }
 
+  sendReaction(messageId: number, reactionType: string): void {
+    this.client?.publish({
+      destination: '/app/chat.react',
+      body: JSON.stringify({ messageId, reactionType })
+    });
+  }
+
   isConnected(): boolean {
     return this.connected;
   }
 }
+

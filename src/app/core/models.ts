@@ -26,13 +26,34 @@ export interface Conversation {
   createdAt: string;
 }
 
+/** Mirrors backend MessageType enum. */
+export type MessageType = 'TEXT' | 'PHOTO' | 'VIDEO' | 'CAPSULE';
+
+/** Compact emoji tally for a message. */
+export interface ReactionSummary {
+  reactionType: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
 export interface ChatMessage {
   id: number;
   conversationId: number;
   senderId: number;
   senderName: string;
   senderAvatarColor: string;
-  content: string;
+  messageType: MessageType;
+  /** Null while a capsule is sealed. */
+  content: string | null;
+  /** Null while a capsule is sealed or for text. */
+  mediaUrl: string | null;
+  /** True when the message is a time capsule. */
+  locked: boolean;
+  /** True when the capsule is still sealed (locked && unlockAt in the future). */
+  sealed: boolean;
+  /** ISO timestamp when a capsule unlocks. */
+  unlockAt: string | null;
+  reactions: ReactionSummary[];
   createdAt: string;
 }
 
@@ -57,3 +78,44 @@ export interface PresenceEvent {
   username: string;
   online: boolean;
 }
+
+/** Broadcast tally update for a single message. */
+export interface ReactionEvent {
+  messageId: number;
+  conversationId: number;
+  reactions: ReactionSummary[];
+  updatedAt: string;
+}
+
+export type TierType = 'FREE_PERSONAL' | 'PAID_FAMILY';
+
+export interface SubscriptionStatus {
+  tier: TierType;
+  premium: boolean;
+  expiresAt: string | null;
+  freeCapsuleMaxDays: number;
+}
+
+export interface MediaUploadResponse {
+  url: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+/** Payload for sending a rich message (text, media, or capsule). */
+export interface SendMessagePayload {
+  conversationId: number;
+  content: string | null;
+  messageType: MessageType;
+  mediaUrl?: string | null;
+  unlockAt?: string | null;
+}
+
+/** 403 premium-gate error body from the backend. */
+export interface PremiumError {
+  status: number;
+  error: string;
+  message: string;
+  feature?: string;
+}
+

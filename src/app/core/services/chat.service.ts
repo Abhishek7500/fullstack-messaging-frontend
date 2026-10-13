@@ -1,8 +1,19 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { BehaviorSubject, Observable, map, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { ChatMessage, Conversation, PageResponse, PresenceEvent, TypingEvent, UserProfile } from '../models';
+import {
+  ChatMessage,
+  Conversation,
+  MediaUploadResponse,
+  PageResponse,
+  PresenceEvent,
+  ReactionEvent,
+  SendMessagePayload,
+  SubscriptionStatus,
+  TypingEvent,
+  UserProfile
+} from '../models';
 import { AuthService } from './auth.service';
 import { WebsocketService } from './websocket.service';
 
@@ -13,6 +24,7 @@ export class ChatService {
   private readonly messagesSubject = new BehaviorSubject<ChatMessage[]>([]);
   private readonly typingSubject = new BehaviorSubject<TypingEvent[]>([]);
   private readonly peopleSubject = new BehaviorSubject<UserProfile[]>([]);
+  private readonly subscriptionSubject = new BehaviorSubject<SubscriptionStatus | null>(null);
   private readonly presence = new Map<number, boolean>();
 
   readonly conversations$ = this.conversationsSubject.asObservable();
@@ -20,6 +32,7 @@ export class ChatService {
   readonly messages$ = this.messagesSubject.asObservable();
   readonly typing$ = this.typingSubject.asObservable();
   readonly people$ = this.peopleSubject.asObservable();
+  readonly subscription$ = this.subscriptionSubject.asObservable();
 
   constructor(
     private readonly http: HttpClient,
@@ -29,12 +42,14 @@ export class ChatService {
     this.websocket.messages$.subscribe((message) => this.onIncomingMessage(message));
     this.websocket.typing$.subscribe((event) => this.onTyping(event));
     this.websocket.presence$.subscribe((event) => this.onPresence(event));
+    this.websocket.reactions$.subscribe((event) => this.onReaction(event));
   }
 
   bootstrap(): void {
     this.websocket.connect();
     this.refreshConversations().subscribe();
     this.searchPeople('').subscribe();
+    this.loadSubscription().subscribe();
   }
 
   shutdown(): void {
@@ -95,14 +110,43 @@ export class ChatService {
     });
   }
 
-  send(content: string): void {
+  send(payload: SendMessagePayload): void {
     const conversationId = this.activeIdSubject.value;
-    const trimmed = content.trim();
-    if (!conversationId || !trimmed) {
+    if (!conversationId || conversationId !== payload.conversationId) {
       return;
     }
-    this.websocket.sendMessage(conversationId, trimmed);
+    if (payload.messageType === 'TEXT' && !payload.content?.trim()) {
+      return;
+    }
+    this.websocket.sendMessage(payload);
     this.websocket.sendTyping(conversationId, false);
+  }
+
+  /** Optimistically toggle a reaction locally, then confirm via WebSocket. */
+  react(messageId: number, reactionType: string): void {
+    this.websocket.sendReaction(messageId, reactionType);
+  }
+
+  loadSubscription(): Observable<SubscriptionStatus> {
+    return this.http
+      .get<SubscriptionStatus>(`${environment.apiUrl}/subscriptions/me`)
+      .pipe(tap((status) => this.subscriptionSubject.next(status)));
+  }
+
+  upgrade(): Observable<SubscriptionStatus> {
+    return this.http
+      .post<SubscriptionStatus>(`${environment.apiUrl}/subscriptions/upgrade`, {})
+      .pipe(tap((status) => this.subscriptionSubject.next(status)));
+  }
+
+  uploadMedia(file: File): Observable<MediaUploadResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<MediaUploadResponse>(`${environment.apiUrl}/media`, form);
+  }
+
+  subscriptionStatus(): SubscriptionStatus | null {
+    return this.subscriptionSubject.value;
   }
 
   notifyTyping(typing: boolean): void {
@@ -136,7 +180,7 @@ export class ChatService {
       conversations.splice(index, 1);
       conversations.unshift({
         ...current,
-        lastMessagePreview: message.content,
+        lastMessagePreview: this.previewFor(message),
         lastMessageAt: message.createdAt,
         lastMessageSenderId: message.senderId,
         unreadCount: unread
@@ -145,6 +189,26 @@ export class ChatService {
     } else {
       this.refreshConversations().subscribe();
     }
+  }
+
+  private onReaction(event: ReactionEvent): void {
+    const messages = this.messagesSubject.value.map((message) =>
+      message.id === event.messageId ? { ...message, reactions: event.reactions } : message
+    );
+    this.messagesSubject.next(messages);
+  }
+
+  private previewFor(message: ChatMessage): string {
+    if (message.sealed || (message.locked && !message.content)) {
+      return '🔒 Locked capsule';
+    }
+    if (message.messageType === 'PHOTO') {
+      return message.content ? `📷 ${message.content}` : '📷 Photo';
+    }
+    if (message.messageType === 'VIDEO') {
+      return message.content ? `🎬 ${message.content}` : '🎬 Video';
+    }
+    return message.content ?? '';
   }
 
   private onTyping(event: TypingEvent): void {
