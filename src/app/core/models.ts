@@ -119,3 +119,30 @@ export interface PremiumError {
   feature?: string;
 }
 
+/** A single Tic-Tac-Toe move published to {@code /app/chat.gamemove}. */
+export interface GameMovePayload {
+  conversationId: number;
+  /** Board coordinates; row/column -1 resets the board. */
+  row: number;
+  column: number;
+}
+
+/** Authoritative shared game state broadcast to {@code /topic/conversations/{id}/game}. */
+export interface GameStateEvent {
+  conversationId: number;
+  board: (string | null)[][];
+  xIsNext: boolean;
+  winner: string | null;
+  winLine: number[];
+  lastMoveBy: number | null;
+  playerXId: number | null;
+  playerOId: number | null;
+  updatedAt: string;
+}
+
+/** Request body for {@code POST /api/conversations} (group creation). */
+export interface CreateGroupRequest {
+  title: string;
+  userIds: number[];
+}
+

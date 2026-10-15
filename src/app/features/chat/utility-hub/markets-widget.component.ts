@@ -1,91 +1,55 @@
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
-
-interface Asset {
-  symbol: string;
-  name: string;
-  icon: string;
-  price: number;
-  prev: number;
-  changePct: number;
-  dir: 'up' | 'down' | 'flat';
-  arrow: string;
-  pctText: string;
-}
-
-interface Game {
-  league: string;
-  home: string;
-  away: string;
-  homeScore: number;
-  awayScore: number;
-  status: string;
-}
-
-const SEED: Asset[] = [
-  { symbol: 'BTC', name: 'Bitcoin', icon: '₿', price: 67420.5, prev: 67420.5, changePct: 0, dir: 'flat', arrow: '•', pctText: '0.00' },
-  { symbol: 'ETH', name: 'Ethereum', icon: 'Ξ', price: 3521.18, prev: 3521.18, changePct: 0, dir: 'flat', arrow: '•', pctText: '0.00' },
-  { symbol: 'AAPL', name: 'Apple Inc.', icon: '', price: 189.42, prev: 189.42, changePct: 0, dir: 'flat', arrow: '•', pctText: '0.00' },
-  { symbol: 'TSLA', name: 'Tesla', icon: '⚡', price: 242.16, prev: 242.16, changePct: 0, dir: 'flat', arrow: '•', pctText: '0.00' },
-  { symbol: 'NVDA', name: 'NVIDIA', icon: '▦', price: 91.07, prev: 91.07, changePct: 0, dir: 'flat', arrow: '•', pctText: '0.00' }
-];
-
-const GAMES: Game[] = [
-  { league: 'NFL', home: 'Chiefs', away: 'Bills', homeScore: 24, awayScore: 21, status: 'Q3 04:12' },
-  { league: 'NBA', home: 'Lakers', away: 'Celtics', homeScore: 88, awayScore: 92, status: 'Q4 02:40' },
-  { league: 'EPL', home: 'Arsenal', away: 'Chelsea', homeScore: 1, awayScore: 1, status: "67'" },
-  { league: 'MLB', home: 'Yankees', away: 'Red Sox', homeScore: 3, awayScore: 2, status: 'Top 7th' },
-  { league: 'UCL', home: 'Real Madrid', away: 'Bayern', homeScore: 2, awayScore: 0, status: "HT" }
-];
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { Subscription } from 'rxjs';
+import { SportsService, SportGame } from './sports.service';
 
 /**
- * 📈 Markets & Scores widget — a mock live dashboard. Prices tick on a timer to
- * simulate a market feed, flashing green/red on each move, while a seamless
- * marquee scrolls live sports scores beneath.
+ * 📈 Markets & Scores widget — streams **real** institutional-grade market data
+ * with **zero API keys**. A TradingView public widget is embedded in a sandboxed
+ * iframe (client-side only, no backend round-trips). Live sports scores come
+ * from {@link SportsService}, which is key-ready but falls back to a local
+ * mock array when no provider key is configured.
  */
 @Component({
   selector: 'app-markets-widget',
   standalone: true,
-  imports: [DecimalPipe],
   template: `
     <div class="rise-in space-y-4">
-      <div class="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 p-4 text-white shadow-pane">
-        <div class="mb-3 flex items-center justify-between">
-          <h3 class="text-sm font-semibold tracking-wide">Live Markets</h3>
-          <span class="flex items-center gap-1.5 text-[11px] text-emerald-300">
-            <span class="h-2 w-2 animate-pulse rounded-full bg-emerald-400"></span>
-            Live
+      <!-- Real TradingView ticker tape (BTC, ETH, AAPL, TSLA, NVDA) — no key -->
+      <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div class="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
+          <div class="flex items-center gap-2">
+            <span class="text-base">📈</span>
+            <h3 class="text-sm font-semibold text-messenger-ink">Live Markets</h3>
+          </div>
+          <span class="flex items-center gap-1.5 text-[11px] text-emerald-600">
+            <span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
+            TradingView
           </span>
         </div>
-        <div class="space-y-1.5">
-          @for (asset of assets(); track asset.symbol) {
-            <div
-              class="flex items-center justify-between rounded-xl px-3 py-2 transition-all duration-300"
-              [class.flash-up]="asset.dir === 'up'"
-              [class.flash-down]="asset.dir === 'down'"
-            >
-              <div class="flex items-center gap-3">
-                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-base">{{ asset.icon }}</span>
-                <div>
-                  <p class="text-sm font-semibold">{{ asset.symbol }}</p>
-                  <p class="text-[11px] text-white/50">{{ asset.name }}</p>
-                </div>
-              </div>
-              <div class="text-right">
-                <p class="text-sm font-semibold tabular-nums">\${{ asset.price | number: '1.2-2' }}</p>
-                <p class="text-[11px] font-medium tabular-nums" [class.text-emerald-400]="asset.dir === 'up'" [class.text-rose-400]="asset.dir === 'down'" [class.opacity-50]="asset.dir === 'flat'">
-                  {{ asset.arrow }} {{ asset.pctText }}%
-                </p>
-              </div>
-            </div>
-          }
+        <div class="tradingview-widget-container" style="height: 78px">
+          <iframe
+            [src]="tickerUrl"
+            title="Live market ticker"
+            class="block h-full w-full border-0"
+            loading="lazy"
+            scrolling="no"
+            sandbox="allow-scripts allow-same-origin"
+            referrerpolicy="strict-origin-when-cross-origin"
+          ></iframe>
         </div>
       </div>
 
+      <!-- Live scores marquee (zero-key mock, key-ready for a real provider) -->
       <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div class="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
-          <span class="text-base">🏆</span>
-          <h3 class="text-sm font-semibold text-messenger-ink">Live Scores</h3>
+        <div class="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
+          <div class="flex items-center gap-2">
+            <span class="text-base">🏆</span>
+            <h3 class="text-sm font-semibold text-messenger-ink">Live Scores</h3>
+          </div>
+          <span class="rounded-full bg-messenger-blue/10 px-2 py-0.5 text-[10px] font-semibold text-messenger-blue">
+            {{ sports.mode() }}
+          </span>
         </div>
         <div class="marquee-wrap relative overflow-hidden py-3">
           <div class="marquee-track gap-3 px-3">
@@ -107,33 +71,38 @@ const GAMES: Game[] = [
   `
 })
 export class MarketsWidgetComponent implements OnInit, OnDestroy {
-  readonly assets = signal<Asset[]>(SEED.map((a) => ({ ...a })));
-  /** Doubled list so the marquee can loop seamlessly (translateX -50%). */
-  readonly ticker = signal<Game[]>([...GAMES, ...GAMES]);
-  private timer: ReturnType<typeof setInterval> | null = null;
+  /** Doubled list so the marquee loops seamlessly (translateX -50%). */
+  readonly ticker = signal<SportGame[]>([]);
+  readonly tickerUrl: SafeResourceUrl;
+  private gamesSubscription?: Subscription;
+
+  constructor(readonly sports: SportsService, sanitizer: DomSanitizer) {
+    const config = {
+      symbols: [
+        { proName: 'BITSTAMP:BTCUSD', title: 'BTC' },
+        { proName: 'BITSTAMP:ETHUSD', title: 'ETH' },
+        { proName: 'NASDAQ:AAPL', title: 'AAPL' },
+        { proName: 'NASDAQ:TSLA', title: 'TSLA' },
+        { proName: 'NASDAQ:NVDA', title: 'NVDA' }
+      ],
+      showSymbolLogo: true,
+      colorTheme: 'light',
+      isTransparent: false,
+      displayMode: 'adaptive',
+      locale: 'en'
+    };
+    const src = `https://s.tradingview.com/embed-widget/ticker-tape/?locale=en#${encodeURIComponent(JSON.stringify(config))}`;
+    this.tickerUrl = sanitizer.bypassSecurityTrustResourceUrl(src);
+  }
 
   ngOnInit(): void {
-    this.timer = setInterval(() => this.tick(), 1600);
+    this.gamesSubscription = this.sports.games$.subscribe((games) => {
+      // Duplicate for a seamless infinite marquee scroll.
+      this.ticker.set([...games, ...games]);
+    });
   }
 
   ngOnDestroy(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-    }
-  }
-
-  private tick(): void {
-    this.assets.update((list) =>
-      list.map((asset) => {
-        const volatility = asset.price * 0.004;
-        const delta = (Math.random() - 0.5) * 2 * volatility;
-        const price = Math.max(0.01, asset.price + delta);
-        const changePct = ((price - asset.prev) / asset.prev) * 100;
-        const dir: Asset['dir'] = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
-        const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '•';
-        const pctText = `${changePct >= 0 ? '+' : ''}${Math.abs(changePct).toFixed(2)}`;
-        return { ...asset, price, changePct, dir, arrow, pctText };
-      })
-    );
+    this.gamesSubscription?.unsubscribe();
   }
 }

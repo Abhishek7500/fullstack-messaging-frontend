@@ -1,10 +1,12 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { BehaviorSubject, Observable, map, tap } from 'rxjs';
+import { BehaviorSubject, Observable, Subject, map, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   ChatMessage,
   Conversation,
+  GameMovePayload,
+  GameStateEvent,
   MediaUploadResponse,
   PageResponse,
   PresenceEvent,
@@ -25,7 +27,9 @@ export class ChatService {
   private readonly typingSubject = new BehaviorSubject<TypingEvent[]>([]);
   private readonly peopleSubject = new BehaviorSubject<UserProfile[]>([]);
   private readonly subscriptionSubject = new BehaviorSubject<SubscriptionStatus | null>(null);
+  private readonly freshIncomingSubject = new Subject<ChatMessage>();
   private readonly presence = new Map<number, boolean>();
+  private readonly seenMessageIds = new Set<number>();
 
   readonly conversations$ = this.conversationsSubject.asObservable();
   readonly activeConversationId$ = this.activeIdSubject.asObservable();
@@ -33,6 +37,7 @@ export class ChatService {
   readonly typing$ = this.typingSubject.asObservable();
   readonly people$ = this.peopleSubject.asObservable();
   readonly subscription$ = this.subscriptionSubject.asObservable();
+  readonly freshIncomingMessages$ = this.freshIncomingSubject.asObservable();
 
   constructor(
     private readonly http: HttpClient,
@@ -58,6 +63,7 @@ export class ChatService {
     this.messagesSubject.next([]);
     this.activeIdSubject.next(null);
     this.typingSubject.next([]);
+    this.seenMessageIds.clear();
   }
 
   refreshConversations(): Observable<Conversation[]> {
@@ -89,13 +95,21 @@ export class ChatService {
   openConversation(conversationId: number): void {
     this.activeIdSubject.next(conversationId);
     this.typingSubject.next([]);
+    this.messagesSubject.next([]);
     this.websocket.watchConversation(conversationId).subscribe();
     this.http
       .get<PageResponse<ChatMessage>>(`${environment.apiUrl}/conversations/${conversationId}/messages`, {
         params: { page: 0, size: 50 }
       })
       .subscribe((page) => {
-        this.messagesSubject.next([...page.content].reverse());
+        if (this.activeIdSubject.value !== conversationId) return;
+        page.content.forEach((message) => this.seenMessageIds.add(message.id));
+        const messages = new Map<number, ChatMessage>(
+          [...page.content, ...this.messagesSubject.value].map((message) => [message.id, message])
+        );
+        this.messagesSubject.next(
+          [...messages.values()].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+        );
       });
     this.http.put<Conversation>(`${environment.apiUrl}/conversations/${conversationId}/read`, {}).subscribe((updated) => {
       this.upsertConversation(this.withLivePresence({ ...updated, unreadCount: 0 }));
@@ -108,6 +122,37 @@ export class ChatService {
       this.websocket.watchConversation(conversation.id).subscribe();
       this.openConversation(conversation.id);
     });
+  }
+
+  /** Spawn a multi-user group chat via POST /api/conversations, then open it. */
+  createGroup(title: string, userIds: number[]): Observable<Conversation> {
+    return this.http
+      .post<Conversation>(`${environment.apiUrl}/conversations`, { title, userIds })
+      .pipe(
+        tap((conversation) => {
+          this.upsertConversation(this.withLivePresence(conversation));
+          this.websocket.watchConversation(conversation.id).subscribe();
+          this.openConversation(conversation.id);
+        })
+      );
+  }
+
+  /** Authoritative game-state stream for the active room. */
+  get game$(): Observable<GameStateEvent> {
+    return this.websocket.game$;
+  }
+
+  latestGameState(conversationId: number): GameStateEvent | null {
+    return this.websocket.latestGameState(conversationId);
+  }
+
+  /** Publish a Tic-Tac-Toe move for the active conversation. */
+  sendGameMove(payload: GameMovePayload): void {
+    this.websocket.sendGameMove(payload);
+  }
+
+  currentUserId(): number | null {
+    return this.auth.currentUser()?.id ?? null;
   }
 
   send(payload: SendMessagePayload): void {
@@ -167,13 +212,19 @@ export class ChatService {
   }
 
   private onIncomingMessage(message: ChatMessage): void {
+    if (this.seenMessageIds.has(message.id)) {
+      return;
+    }
+    this.seenMessageIds.add(message.id);
+
     const activeId = this.activeIdSubject.value;
     if (activeId === message.conversationId) {
       const existing = this.messagesSubject.value;
-      if (!existing.some((item) => item.id === message.id)) {
-        this.messagesSubject.next([...existing, message]);
-      }
+      this.messagesSubject.next([...existing, message]);
       this.http.put(`${environment.apiUrl}/conversations/${message.conversationId}/read`, {}).subscribe();
+    }
+    if (message.senderId !== this.auth.currentUser()?.id) {
+      this.freshIncomingSubject.next(message);
     }
 
     const conversations = [...this.conversationsSubject.value];

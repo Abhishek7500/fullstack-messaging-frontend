@@ -44,7 +44,11 @@ type ModalReason = 'extended_capsule' | 'group_media' | 'tier_paid_family' | 'ge
               </li>
             </ul>
 
-            @if (processing()) {
+            @if (failed()) {
+              <p class="mt-4 text-center text-sm text-rose-600" role="alert">The upgrade could not be completed. Please try again.</p>
+            }
+
+            @if (processing() && !failed()) {
               <p class="mt-6 text-center text-sm text-messenger-muted">Processing your mock payment…</p>
             } @else {
               <button
@@ -67,6 +71,7 @@ type ModalReason = 'extended_capsule' | 'group_media' | 'tier_paid_family' | 'ge
 export class PremiumUpgradeModalComponent {
   /** Whether the modal is visible. */
   readonly open = input<boolean>(false);
+  readonly failed = input<boolean>(false);
   /** Current tier, used to tailor copy. */
   readonly status = input<SubscriptionStatus | null>(null);
   /** Machine-readable reason from the backend 403 (optional). */

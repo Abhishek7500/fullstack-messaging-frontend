@@ -1,15 +1,16 @@
 import { AsyncPipe, DatePipe } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
 import { ChatService } from '../../core/services/chat.service';
 import { Conversation, UserProfile } from '../../core/models';
 import { AvatarComponent } from '../../shared/avatar.component';
+import { CreateGroupModalComponent } from './create-group-modal.component';
 
 @Component({
   selector: 'app-conversation-list',
   standalone: true,
-  imports: [AsyncPipe, DatePipe, FormsModule, AvatarComponent],
+  imports: [AsyncPipe, DatePipe, FormsModule, AvatarComponent, CreateGroupModalComponent],
   template: `
     <aside class="flex h-full w-full flex-col border-r border-gray-200 bg-white md:w-[360px]">
       <header class="flex items-center justify-between px-4 pb-3 pt-5">
@@ -18,7 +19,20 @@ import { AvatarComponent } from '../../shared/avatar.component';
             <app-avatar [name]="me.displayName" [color]="me.avatarColor" size="md" />
           }
           <div>
-            <h1 class="text-xl font-bold">Chats</h1>
+            <div class="flex w-full items-center justify-between">
+              <h1 class="text-xl font-bold">Chats</h1>
+              <button
+                type="button"
+                class="rounded-full p-2 text-messenger-blue hover:bg-blue-50"
+                (click)="showCreateGroup.set(true)"
+                aria-label="Create group chat"
+                title="Create group chat"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-6 w-6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+              </button>
+            </div>
             <p class="text-xs text-messenger-muted">{{ me?.displayName }}</p>
           </div>
         </div>
@@ -83,9 +97,16 @@ import { AvatarComponent } from '../../shared/avatar.component';
         }
       </div>
     </aside>
+    <app-create-group-modal
+      [open]="showCreateGroup()"
+      (closed)="showCreateGroup.set(false)"
+      (created)="onGroupCreated()"
+    />
   `
 })
 export class ConversationListComponent {
+  readonly conversationOpened = output<void>();
+  readonly showCreateGroup = signal(false);
   query = '';
   readonly conversations$ = this.chat.conversations$;
   readonly people$ = this.chat.people$;
@@ -101,13 +122,20 @@ export class ConversationListComponent {
     this.chat.searchPeople(value).subscribe();
   }
 
+  onGroupCreated(): void {
+    this.showCreateGroup.set(false);
+    this.conversationOpened.emit();
+  }
+
   open(conversation: Conversation): void {
     this.chat.openConversation(conversation.id);
+    this.conversationOpened.emit();
   }
 
   startChat(person: UserProfile): void {
     this.query = '';
     this.chat.startDirectChat(person.id);
+    this.conversationOpened.emit();
   }
 
   logout(): void {
